@@ -11,9 +11,9 @@ FPS = 60
 class Player(pg.sprite.Sprite):
     def __init__(self, x, y, size):
         super().__init__()
-        self.image = pg.Surface((size, size))
-        self.image.fill((0, 0, 255))  # Blue color
-        self.rect = self.image.get_rect()
+        self.original_image = pg.Surface((size, size))
+        self.original_image.fill((0, 0, 255))  # Blue color
+        self.rect = self.original_image.get_rect()
         self.rect.topleft = (x, y)
         self.pos = (self.rect.x, self.rect.y)
         self.speed = 5
@@ -30,6 +30,20 @@ class Player(pg.sprite.Sprite):
         self.dash_cost = 25
         self.dash_cooldown = 30  # In frames (0.5 seconds at 60 FPS)
         self.dash_timer = 0
+        self.dash_effect = None
+        self.dash_effect_alpha = 255
+        
+    def rotate_image(self, angle):
+        old_center = self.rect.center
+        self.image = pg.transform.rotate(self.original_image.copy(), math.degrees(angle))
+        self.rect = self.image.get_rect()
+        self.rect.center = old_center
+
+    def aim(self, mouse_pos, camera):
+        dx = mouse_pos[0] - (self.rect.centerx - camera.camera.x)
+        dy = mouse_pos[1] - (self.rect.centery - camera.camera.y)
+        self.angle = math.atan2(dy, dx)
+        self.rotate_image(self.angle)
 
     def switch_weapon(self, keys):
         if keys[pg.K_1]:
@@ -58,14 +72,41 @@ class Player(pg.sprite.Sprite):
                 self.rect.x -= self.dash_speed
             if keys[pg.K_d]:
                 self.rect.x += self.dash_speed
+
+            # Create the dash effect surface
+            self.dash_effect = pg.Surface((self.rect.width, self.rect.height))
+            self.dash_effect.fill((255, 255, 255))  # White color
+            self.dash_effect.set_alpha(self.dash_effect_alpha)
+
         elif self.dash_timer > 0:
             self.dash_timer -= 1
+
+    def update_dash_effect(self):
+        if self.dash_timer > 0:
+            self.dash_timer -= 1
+            self.dash_effect_alpha = 128  # Set dash_effect_alpha to 128 for fade-out effect
+            self.dash_effect = self.create_dash_effect()  # Create dash effect
+        else:
+            self.dash_effect_alpha = 0  # Set dash_effect_alpha to 0 when dash is not active
+            self.dash_effect = None
+
+    def create_dash_effect(self):
+        effect_surface = pg.Surface((self.rect.width, self.rect.height))
+        effect_surface.set_alpha(self.dash_effect_alpha)  # Set transparency
+        effect_surface.fill((255, 255, 255))  # White color
+        effect_rect = effect_surface.get_rect(center=self.rect.center)
+        return effect_surface, effect_rect
+
+    def draw_dash_effect(self, screen, camera):
+        if self.dash_effect:
+            effect_surface, effect_rect = self.dash_effect
+            screen.blit(effect_surface, effect_rect.move(-camera.camera.x, -camera.camera.y))
 
     def update_stamina(self):
         if self.stamina < self.max_stamina and self.dash_timer == 0:
             self.stamina += 1
 
-    def move(self, keys, game_world_rect):
+    def move(self, keys, game_world_rect, walls):
         prev_x = self.rect.x
         prev_y = self.rect.y
 
@@ -82,10 +123,16 @@ class Player(pg.sprite.Sprite):
         self.rect.x = max(0, min(self.rect.x, CAMERA_WIDTH - self.rect.width))
         self.rect.y = max(0, min(self.rect.y, CAMERA_HEIGHT - self.rect.height))
 
-    def aim(self, mouse_pos, camera):
-        dx = mouse_pos[0] - (self.rect.centerx - camera.camera.x)
-        dy = mouse_pos[1] - (self.rect.centery - camera.camera.y)
-        self.angle = math.atan2(dy, dx)
+        # Check for collisions with walls
+        if self.collide_with_walls(walls):
+            self.rect.x = prev_x
+            self.rect.y = prev_y
+
+    def collide_with_walls(self, walls):
+        for wall in walls:
+            if self.rect.colliderect(wall):
+                return True
+        return False
 
     def shoot(self, keys, projectiles, mouse_pos, camera):
         if pg.mouse.get_pressed()[0]:  # Left mouse button

@@ -4,8 +4,21 @@ import math
 import src
 import ui
 
-# todo: add a score tracker, respawning enemies, pause / exit screen, respawning health
-# boss enemies, sound effects, walls, doors, stealth, grenades, allies
+# todo: 
+# include game state 
+# levels
+# fix minimap
+# fix dash effect
+# scoretracker
+# enemy spawner
+# healther spawner
+# power-ups
+# boss-enemies
+# sound effects
+# doors
+# stealth
+# enemy percept
+# allies
 
 pygame.init()
 
@@ -18,7 +31,7 @@ pygame.display.set_caption("Hyperion Alpha")
 clock = pygame.time.Clock()
 
 player = src.Player(400, 300, 20)
-enemies = [src.Enemy(100, 100, 20), src.Enemy(300, 100, 20), src.Enemy(500, 100, 20)]
+enemies = [src.Enemy(100 + i * 200, 100, 20) for i in range(5)]
 camera = ui.Camera(CAMERA_WIDTH, CAMERA_HEIGHT)
 
 map_size = (WIDTH, HEIGHT)
@@ -55,7 +68,6 @@ while running:
         ui.pause_screen(screen)
         continue
 
-    # If the player's health is zero, display the game over screen
     if player.health <= 0:
         def start_over():
             global player, enemies
@@ -70,7 +82,7 @@ while running:
         continue
 
     keys = pygame.key.get_pressed()
-    player.move(keys, game_world_rect)
+    player.move(keys, game_world_rect, walls)
     player.dash(keys, game_world_rect)
     player.switch_weapon(keys)  # Check for weapon switching
     player.update_stamina()
@@ -89,6 +101,7 @@ while running:
     viewport.center = player.rect.center
     viewport.clamp_ip(game_world_rect)
 
+    player.update_dash_effect()  # Update the dash effect
     screen.fill("#222222")  # Clear the screen
 
     for wall in walls:
@@ -127,11 +140,13 @@ while running:
     # Remove dead enemies from the list
     enemies = [enemy for enemy in enemies if enemy.health > 0]
     health_percentage = player.health / 100
+    enemies = [enemy for enemy in enemies if enemy.health > 0]
+    health_percentage = player.health / 100
     ui.draw_health_bar(screen, 20, 20, 200, 20, health_percentage)
     stamina_percentage = player.stamina / player.max_stamina
     ui.draw_stamina_bar(screen, 20, 50, 200, 20, stamina_percentage)
+    # player.draw_dash_effect(screen, camera)  # Draw the dash effect
     pygame.display.flip()
     clock.tick(FPS)
 
 pygame.quit()
-
