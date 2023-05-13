@@ -1,0 +1,263 @@
+import pygame as pg
+import random as rd
+import math
+
+# Constants
+WIDTH, HEIGHT = 1400, 800
+CAMERA_WIDTH, CAMERA_HEIGHT = WIDTH * 15, HEIGHT * 15
+FPS = 60
+
+# Player class
+class Player(pg.sprite.Sprite):
+    def __init__(self, x, y, size):
+        super().__init__()
+        self.image = pg.Surface((size, size))
+        self.image.fill((0, 0, 255))  # Blue color
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+        self.pos = (self.rect.x, self.rect.y)
+        self.speed = 5
+        self.weapon1 = Pistol(10, 1, 0)  # Pistol
+        self.weapon2 = Shotgun(30, 1, 0, 5, math.radians(45))  # Shotgun
+        self.weapon3 = MachinGun(5, 0, 0)
+        self.weapon = self.weapon1  # Set the default weapon
+        self.dash_speed = 50
+        self.shooting = False
+        self.angle = 0
+        self.health = 100
+        self.stamina = 100
+        self.max_stamina = 100
+        self.dash_cost = 25
+        self.dash_cooldown = 30  # In frames (0.5 seconds at 60 FPS)
+        self.dash_timer = 0
+
+    def switch_weapon(self, keys):
+        if keys[pg.K_1]:
+            self.weapon = self.weapon1
+        elif keys[pg.K_2]:
+            self.weapon = self.weapon2
+        elif keys[pg.K_3]:
+            self.weapon = self.weapon3
+
+    def take_damage(self, amount):
+            self.health -= amount
+            if self.health <= 0:
+                self.health = 0
+                self.rect.x = -1000  # Move the player off-screen to simulate despawning
+                self.rect.y = -1000
+
+    def dash(self, keys, game_world_rect):
+        if keys[pg.K_SPACE] and self.stamina >= self.dash_cost and self.dash_timer == 0:
+            self.stamina -= self.dash_cost
+            self.dash_timer = self.dash_cooldown
+            if keys[pg.K_w]:
+                self.rect.y -= self.dash_speed
+            if keys[pg.K_s]:
+                self.rect.y += self.dash_speed
+            if keys[pg.K_a]:
+                self.rect.x -= self.dash_speed
+            if keys[pg.K_d]:
+                self.rect.x += self.dash_speed
+        elif self.dash_timer > 0:
+            self.dash_timer -= 1
+
+    def update_stamina(self):
+        if self.stamina < self.max_stamina and self.dash_timer == 0:
+            self.stamina += 1
+
+    def move(self, keys, game_world_rect):
+        prev_x = self.rect.x
+        prev_y = self.rect.y
+
+        if keys[pg.K_w]:  # W key
+            self.rect.y -= self.speed
+        if keys[pg.K_s]:  # S key
+            self.rect.y += self.speed
+        if keys[pg.K_a]:  # A key
+            self.rect.x -= self.speed
+        if keys[pg.K_d]:  # D key
+            self.rect.x += self.speed
+
+        # Keep player within the larger map boundaries
+        self.rect.x = max(0, min(self.rect.x, CAMERA_WIDTH - self.rect.width))
+        self.rect.y = max(0, min(self.rect.y, CAMERA_HEIGHT - self.rect.height))
+
+    def aim(self, mouse_pos, camera):
+        dx = mouse_pos[0] - (self.rect.centerx - camera.camera.x)
+        dy = mouse_pos[1] - (self.rect.centery - camera.camera.y)
+        self.angle = math.atan2(dy, dx)
+
+    def shoot(self, keys, projectiles, mouse_pos, camera):
+        if pg.mouse.get_pressed()[0]:  # Left mouse button
+            self.shooting = True
+            self.weapon.shoot(self, projectiles, mouse_pos, camera)
+        else:
+            self.shooting = False
+            self.weapon.update_shoot_timer()
+
+class Enemy(pg.sprite.Sprite):
+    def __init__(self, x, y, size):
+        super().__init__()
+        self.image = pg.Surface((size, size))
+        self.image.fill((255, 0, 0))  # Red color
+        self.rect = self.image.get_rect()
+        self.pos = (self.rect.x, self.rect.y)
+        self.rect.topleft = (x, y)
+        self.health = 50
+        self.speed = 3
+        self.shoot_timer = 0
+        self.prev_x = x
+        self.prev_y = y
+        self.shoot_cooldown = 60  # In frames (1 second at 60 FPS)
+
+    def follow_player(self, player, enemies, game_world_rect):
+        self.prev_x = self.rect.x
+        self.prev_y = self.rect.y
+
+        dx = player.rect.x - self.rect.x
+        dy = player.rect.y - self.rect.y
+        dist = math.sqrt(dx * dx + dy * dy)
+
+        if dist > 0:
+            self.rect.x += self.speed * dx / dist
+            self.rect.y += self.speed * dy / dist
+
+        # Keep enemy within the larger map boundaries
+        self.rect.x = max(0, min(self.rect.x, CAMERA_WIDTH - self.rect.width))
+        self.rect.y = max(0, min(self.rect.y, CAMERA_HEIGHT - self.rect.height))
+
+        for other_enemy in enemies:
+            if other_enemy is not self and self.rect.colliderect(other_enemy.rect):
+                self.rect.x = self.prev_x
+                self.rect.y = self.prev_y
+
+    def shoot(self, player, enemy_projectiles):
+        if self.shoot_timer == 0:
+            dx = player.rect.centerx - self.rect.centerx
+            dy = player.rect.centery - self.rect.centery
+            angle = math.atan2(dy, dx)
+
+            proj = Projectile(self.rect.centerx, self.rect.centery, 5, angle, 7)
+            enemy_projectiles.add(proj)
+            self.shoot_timer = self.shoot_cooldown
+        else:
+            self.shoot_timer -= 1
+
+    def take_damage(self, amount):
+        self.health -= amount
+        if self.health <= 0:
+            self.health = 0
+            # Handle enemy death (e.g., remove from the game, spawn a new enemy, or award points)
+
+class Projectile(pg.sprite.Sprite):
+    def __init__(self, x, y, size, angle, speed):
+        super().__init__()
+        self.image = pg.Surface((size, size))
+        self.image.fill("#ffcc00")  # Light blue color
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+        self.speed = speed
+        self.angle = angle
+
+    def update(self):
+        dx = self.speed * math.cos(self.angle)
+        dy = self.speed * math.sin(self.angle)
+        self.rect.x += dx
+        self.rect.y += dy
+
+class Weapon:
+    def __init__(self, rate_of_fire, stability, recharge):
+        self.rate_of_fire = rate_of_fire
+        self.stability = stability
+        self.recharge = recharge
+        self.shoot_timer = 0
+
+    def update_shoot_timer(self):
+        if self.shoot_timer > 0:
+            self.shoot_timer -= 1
+
+    def shoot(self, shooter, projectiles, mouse_pos, camera):
+        pass
+
+class Pistol(Weapon):
+    def __init__(self, rate_of_fire, stability, recharge):
+        super().__init__(rate_of_fire, stability, recharge)
+
+    def shoot(self, shooter, projectiles, mouse_pos, camera):
+        if self.shoot_timer == 0:
+            proj = Projectile(shooter.rect.centerx, shooter.rect.centery, 5, shooter.angle, 10)
+            projectiles.add(proj)
+            self.shoot_timer = self.rate_of_fire
+
+class Shotgun(Weapon):
+    def __init__(self, rate_of_fire, stability, recharge, num_pellets, spread_angle):
+        super().__init__(rate_of_fire, stability, recharge)
+        self.num_pellets = num_pellets
+        self.spread_angle = spread_angle
+
+    def shoot(self, shooter, projectiles, mouse_pos, camera):
+        if self.shoot_timer == 0:
+            for i in range(self.num_pellets):
+                angle = shooter.angle - (self.spread_angle / 2) + (i * self.spread_angle / (self.num_pellets - 1))
+                proj = Projectile(shooter.rect.centerx, shooter.rect.centery, 5, angle, 10)
+                projectiles.add(proj)
+            self.shoot_timer = self.rate_of_fire
+        else:
+            self.update_shoot_timer()
+
+class MachinGun(Weapon):
+    def __init__(self, rate_of_fire, stability, recharge):
+        super().__init__(rate_of_fire, stability, recharge)
+
+    def shoot(self, shooter, projectiles, mouse_pos, camera):
+        proj = Projectile(shooter.rect.centerx, shooter.rect.centery, 5, shooter.angle, 10)
+        projectiles.add(proj)
+
+class HealthPickup(pg.sprite.Sprite):
+    def __init__(self, x, y, size):
+        super().__init__()
+        self.image = pg.Surface((size, size))
+        self.image.fill((0, 255, 0))  # Green color
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+        self.health_restore = 25
+
+class Wall(pg.sprite.Sprite):
+    def __init__(self, x, y, size):
+        super().__init__()
+        self.image = pg.Surface((size, size))
+        self.image.fill((128, 128, 128))  # Gray color
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+
+def createGrid(map_size, wall_size, player, enemies, prob):
+    wall_grid = [[0 for _ in range(map_size[0]//wall_size[0])] for _ in range(map_size[1]//wall_size[1])]
+    for i in range(map_size[1]//wall_size[1]):
+        for j in range(map_size[0]//wall_size[0]):
+            if (i, j) == (player.pos[1]//wall_size[1], player.pos[0]//wall_size[0]):
+                wall_grid[i][j] = 0
+            elif any((i, j) == (enemy.pos[1]//wall_size[1], enemy.pos[0]//wall_size[0]) for enemy in enemies):
+                wall_grid[i][j] = 0
+            elif i % 2 == 0 and j % 2 == 0 and rd.random() < prob and \
+                any(((i-1, j) == (player.pos[1]//wall_size[1], player.pos[0]//wall_size[0])) or \
+                ((i, j+1) == (player.pos[1]//wall_size[1], player.pos[0]//wall_size[0])) or \
+                ((i-1, j) == (enemy.pos[1]//wall_size[1], enemy.pos[0]//wall_size[0])) or \
+                ((i, j+1) == (enemy.pos[1]//wall_size[1], enemy.pos[0]//wall_size[0])) for enemy in enemies):
+                wall_grid[i][j] = 0
+            elif i % 2 == 0 and j % 2 == 0 and rd.random() < prob:
+                wall_grid[i][j] = 1
+                if rd.randint(1,2) == 1:
+                    wall_grid[i-1][j] = 1
+                else:
+                    wall_grid[i][j+1] = 1
+    return wall_grid
+
+def createWalls(wall_grid, wall_size):
+    walls = []
+    for i in range(len(wall_grid)):
+        for j in range(len(wall_grid[i])):
+            if wall_grid[i][j] == 1:
+                wall = pg.Rect(j*wall_size[0], i*wall_size[1], wall_size[0], wall_size[1])
+                walls.append(wall)
+    return walls
+
