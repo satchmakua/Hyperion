@@ -124,4 +124,6 @@ def pause_screen(screen):
 
     font = pg.font.SysFont(None, 30)
     text = font.render("Press Enter to resume or Esc to exit", True, (255, 255, 255))
-    screen.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 + text.get_height() // 2))
+    screen.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 + text.get_height() // 2 + 40)) 
+    pg.display.flip()  # Update the display to show the pause screen
+

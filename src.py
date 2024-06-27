@@ -1,6 +1,7 @@
 import pygame as pg
 import random as rd
 import math
+import heapq
 
 # Constants
 WIDTH, HEIGHT = 1400, 800
@@ -158,32 +159,85 @@ class Enemy(pg.sprite.Sprite):
         self.shoot_cooldown = 60  # In frames (1 second at 60 FPS)
 
     def follow_player(self, player, enemies, game_world_rect, walls):
-            self.prev_x = self.rect.x
-            self.prev_y = self.rect.y
+        self.prev_x = self.rect.x
+        self.prev_y = self.rect.y
+        if not hasattr(self, 'stuck_frames'):
+            self.stuck_frames = 0  # Initialize stuck_frames if not already present
 
-            dx = player.rect.x - self.rect.x
-            dy = player.rect.y - self.rect.y
-            dist = math.sqrt(dx * dx + dy * dy)
-            stop_distance = 50  # Distance to stop before reaching the player
+        directions = [
+            (self.speed, 0), (-self.speed, 0),
+            (0, self.speed), (0, -self.speed)
+        ]
+        diagonal_directions = [
+            (self.speed, self.speed), (-self.speed, -self.speed),
+            (self.speed, -self.speed), (-self.speed, self.speed)
+        ]
 
-            if dist > stop_distance:
-                self.rect.x += self.speed * dx / dist
-                self.rect.y += self.speed * dy / dist
+        dx = player.rect.x - self.rect.x
+        dy = player.rect.y - self.rect.y
+        dist = math.sqrt(dx * dx + dy * dy)
+        stop_distance = 50  # Distance to stop before reaching the player
 
-            # Keep enemy within the larger map boundaries
-            self.rect.x = max(0, min(self.rect.x, CAMERA_WIDTH - self.rect.width))
-            self.rect.y = max(0, min(self.rect.y, CAMERA_HEIGHT - self.rect.height))
-
-            # Check for collisions with other enemies
-            for other_enemy in enemies:
-                if other_enemy is not self and self.rect.colliderect(other_enemy.rect):
-                    self.rect.x = self.prev_x
-                    self.rect.y = self.prev_y
+        if dist > stop_distance:
+            # Try moving directly towards the player
+            move_x = self.speed * dx / dist
+            move_y = self.speed * dy / dist
+            self.rect.x += move_x
+            self.rect.y += move_y
 
             # Check for collisions with walls
             if self.collide_with_walls(walls):
+                self.rect.x -= move_x
+                self.rect.y -= move_y
+
+                # Simple pathfinding logic to navigate around walls
+                found_path = False
+                for direction in directions:
+                    self.rect.x += direction[0]
+                    self.rect.y += direction[1]
+                    if not self.collide_with_walls(walls):
+                        found_path = True
+                        break
+                    self.rect.x -= direction[0]
+                    self.rect.y -= direction[1]
+
+                # If no clear path found, try diagonal moves
+                if not found_path:
+                    for direction in diagonal_directions:
+                        self.rect.x += direction[0]
+                        self.rect.y += direction[1]
+                        if not self.collide_with_walls(walls):
+                            break
+                        self.rect.x -= direction[0]
+                        self.rect.y -= direction[1]
+
+        # Check if the enemy is stuck
+        if self.prev_x == self.rect.x and self.prev_y == self.rect.y:
+            self.stuck_frames += 1
+        else:
+            self.stuck_frames = 0
+
+        # If stuck, move in a random direction
+        if self.stuck_frames > 3:
+            random_direction = rd.choice(directions + diagonal_directions)
+            self.rect.x += 10*random_direction[0]
+            self.rect.y += 10*random_direction[1]
+            self.stuck_frames = 0
+
+        # Keep enemy within the larger map boundaries
+        self.rect.x = max(0, min(self.rect.x, CAMERA_WIDTH - self.rect.width))
+        self.rect.y = max(0, min(self.rect.y, CAMERA_HEIGHT - self.rect.height))
+
+        # Check for collisions with other enemies
+        for other_enemy in enemies:
+            if other_enemy is not self and self.rect.colliderect(other_enemy.rect):
                 self.rect.x = self.prev_x
                 self.rect.y = self.prev_y
+
+        # Check for collisions with walls
+        if self.collide_with_walls(walls):
+            self.rect.x = self.prev_x
+            self.rect.y = self.prev_y
 
     def collide_with_walls(self, walls):
         for wall in walls:
