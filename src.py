@@ -134,10 +134,10 @@ class Player(pg.sprite.Sprite):
                 return True
         return False
 
-    def shoot(self, keys, projectiles, mouse_pos, camera):
+    def shoot(self, keys, projectiles, mouse_pos, camera, walls):
         if pg.mouse.get_pressed()[0]:  # Left mouse button
             self.shooting = True
-            self.weapon.shoot(self, projectiles, mouse_pos, camera)
+            self.weapon.shoot(self, projectiles, mouse_pos, camera, walls)
         else:
             self.shooting = False
             self.weapon.update_shoot_timer()
@@ -157,44 +157,58 @@ class Enemy(pg.sprite.Sprite):
         self.prev_y = y
         self.shoot_cooldown = 60  # In frames (1 second at 60 FPS)
 
-    def follow_player(self, player, enemies, game_world_rect):
-        self.prev_x = self.rect.x
-        self.prev_y = self.rect.y
+    def follow_player(self, player, enemies, game_world_rect, walls):
+            self.prev_x = self.rect.x
+            self.prev_y = self.rect.y
 
-        dx = player.rect.x - self.rect.x
-        dy = player.rect.y - self.rect.y
-        dist = math.sqrt(dx * dx + dy * dy)
+            dx = player.rect.x - self.rect.x
+            dy = player.rect.y - self.rect.y
+            dist = math.sqrt(dx * dx + dy * dy)
+            stop_distance = 50  # Distance to stop before reaching the player
 
-        if dist > 0:
-            self.rect.x += self.speed * dx / dist
-            self.rect.y += self.speed * dy / dist
+            if dist > stop_distance:
+                self.rect.x += self.speed * dx / dist
+                self.rect.y += self.speed * dy / dist
 
-        # Keep enemy within the larger map boundaries
-        self.rect.x = max(0, min(self.rect.x, CAMERA_WIDTH - self.rect.width))
-        self.rect.y = max(0, min(self.rect.y, CAMERA_HEIGHT - self.rect.height))
+            # Keep enemy within the larger map boundaries
+            self.rect.x = max(0, min(self.rect.x, CAMERA_WIDTH - self.rect.width))
+            self.rect.y = max(0, min(self.rect.y, CAMERA_HEIGHT - self.rect.height))
 
-        for other_enemy in enemies:
-            if other_enemy is not self and self.rect.colliderect(other_enemy.rect):
+            # Check for collisions with other enemies
+            for other_enemy in enemies:
+                if other_enemy is not self and self.rect.colliderect(other_enemy.rect):
+                    self.rect.x = self.prev_x
+                    self.rect.y = self.prev_y
+
+            # Check for collisions with walls
+            if self.collide_with_walls(walls):
                 self.rect.x = self.prev_x
                 self.rect.y = self.prev_y
 
-    def shoot(self, player, enemy_projectiles):
-        if self.shoot_timer == 0:
-            dx = player.rect.centerx - self.rect.centerx
-            dy = player.rect.centery - self.rect.centery
-            angle = math.atan2(dy, dx)
-
-            proj = Projectile(self.rect.centerx, self.rect.centery, 5, angle, 7)
-            enemy_projectiles.add(proj)
-            self.shoot_timer = self.shoot_cooldown
-        else:
-            self.shoot_timer -= 1
+    def collide_with_walls(self, walls):
+        for wall in walls:
+            if self.rect.colliderect(wall):
+                return True
+        return False
 
     def take_damage(self, amount):
         self.health -= amount
         if self.health <= 0:
             self.health = 0
-            # Handle enemy death (e.g., remove from the game, spawn a new enemy, or award points)
+            self.rect.x = -1000  # Move the enemy off-screen to simulate despawning
+            self.rect.y = -1000
+
+    def shoot(self, player, projectiles, walls):
+        if self.shoot_timer == 0:
+            dx = player.rect.x - self.rect.x
+            dy = player.rect.y - self.rect.y
+            angle = math.atan2(dy, dx)
+            proj = Projectile(self.rect.centerx, self.rect.centery, 5, angle, 10)
+            projectiles.add(proj)
+            proj.update(walls)  # Ensure the projectile gets the walls list
+            self.shoot_timer = self.shoot_cooldown
+        else:
+            self.shoot_timer -= 1
 
 class Projectile(pg.sprite.Sprite):
     def __init__(self, x, y, size, angle, speed):
@@ -206,11 +220,21 @@ class Projectile(pg.sprite.Sprite):
         self.speed = speed
         self.angle = angle
 
-    def update(self):
+    def update(self, walls):
         dx = self.speed * math.cos(self.angle)
         dy = self.speed * math.sin(self.angle)
         self.rect.x += dx
         self.rect.y += dy
+
+        # Check for collisions with walls
+        if self.collide_with_walls(walls):
+            self.kill()  # Remove the projectile if it collides with a wall
+
+    def collide_with_walls(self, walls):
+        for wall in walls:
+            if self.rect.colliderect(wall):
+                return True
+        return False
 
 class Weapon:
     def __init__(self, rate_of_fire, stability, recharge):
@@ -230,10 +254,11 @@ class Pistol(Weapon):
     def __init__(self, rate_of_fire, stability, recharge):
         super().__init__(rate_of_fire, stability, recharge)
 
-    def shoot(self, shooter, projectiles, mouse_pos, camera):
+    def shoot(self, shooter, projectiles, mouse_pos, camera, walls):
         if self.shoot_timer == 0:
             proj = Projectile(shooter.rect.centerx, shooter.rect.centery, 5, shooter.angle, 10)
             projectiles.add(proj)
+            proj.update(walls)  # Ensure the projectile gets the walls list
             self.shoot_timer = self.rate_of_fire
 
 class Shotgun(Weapon):
@@ -242,12 +267,13 @@ class Shotgun(Weapon):
         self.num_pellets = num_pellets
         self.spread_angle = spread_angle
 
-    def shoot(self, shooter, projectiles, mouse_pos, camera):
+    def shoot(self, shooter, projectiles, mouse_pos, camera, walls):
         if self.shoot_timer == 0:
             for i in range(self.num_pellets):
                 angle = shooter.angle - (self.spread_angle / 2) + (i * self.spread_angle / (self.num_pellets - 1))
                 proj = Projectile(shooter.rect.centerx, shooter.rect.centery, 5, angle, 10)
                 projectiles.add(proj)
+                proj.update(walls)  # Ensure the projectile gets the walls list
             self.shoot_timer = self.rate_of_fire
         else:
             self.update_shoot_timer()
@@ -256,9 +282,14 @@ class MachinGun(Weapon):
     def __init__(self, rate_of_fire, stability, recharge):
         super().__init__(rate_of_fire, stability, recharge)
 
-    def shoot(self, shooter, projectiles, mouse_pos, camera):
-        proj = Projectile(shooter.rect.centerx, shooter.rect.centery, 5, shooter.angle, 10)
+    def shoot(self, shooter, projectiles, mouse_pos, camera, walls):
+        dx = mouse_pos[0] - (shooter.rect.centerx - camera.camera.x)
+        dy = mouse_pos[1] - (shooter.rect.centery - camera.camera.y)
+        angle = math.atan2(dy, dx)
+        proj = Projectile(shooter.rect.centerx, shooter.rect.centery, 5, angle, 10)
         projectiles.add(proj)
+        proj.update(walls)  # Ensure the projectile gets the walls list
+
 
 class HealthPickup(pg.sprite.Sprite):
     def __init__(self, x, y, size):
@@ -278,25 +309,37 @@ class Wall(pg.sprite.Sprite):
         self.rect.topleft = (x, y)
 
 def createGrid(map_size, wall_size, player, enemies, prob):
-    wall_grid = [[0 for _ in range(map_size[0]//wall_size[0])] for _ in range(map_size[1]//wall_size[1])]
-    for i in range(map_size[1]//wall_size[1]):
-        for j in range(map_size[0]//wall_size[0]):
-            if (i, j) == (player.pos[1]//wall_size[1], player.pos[0]//wall_size[0]):
+    wall_grid = [[0 for _ in range(map_size[0] // wall_size[0])] for _ in range(map_size[1] // wall_size[1])]
+    for i in range(map_size[1] // wall_size[1]):
+        for j in range(map_size[0] // wall_size[0]):
+            if (i, j) == (player.pos[1] // wall_size[1], player.pos[0] // wall_size[0]):
                 wall_grid[i][j] = 0
-            elif any((i, j) == (enemy.pos[1]//wall_size[1], enemy.pos[0]//wall_size[0]) for enemy in enemies):
+            elif any((i, j) == (enemy.pos[1] // wall_size[1], enemy.pos[0] // wall_size[0]) for enemy in enemies):
                 wall_grid[i][j] = 0
             elif i % 2 == 0 and j % 2 == 0 and rd.random() < prob and \
-                any(((i-1, j) == (player.pos[1]//wall_size[1], player.pos[0]//wall_size[0])) or \
-                ((i, j+1) == (player.pos[1]//wall_size[1], player.pos[0]//wall_size[0])) or \
-                ((i-1, j) == (enemy.pos[1]//wall_size[1], enemy.pos[0]//wall_size[0])) or \
-                ((i, j+1) == (enemy.pos[1]//wall_size[1], enemy.pos[0]//wall_size[0])) for enemy in enemies):
+                any(((i - 1, j) == (player.pos[1] // wall_size[1], player.pos[0] // wall_size[0])) or \
+                    ((i, j + 1) == (player.pos[1] // wall_size[1], player.pos[0] // wall_size[0])) or \
+                    ((i - 1, j) == (enemy.pos[1] // wall_size[1], enemy.pos[0] // wall_size[0])) or \
+                    ((i, j + 1) == (enemy.pos[1] // wall_size[1], enemy.pos[0] // wall_size[0])) for enemy in enemies):
                 wall_grid[i][j] = 0
             elif i % 2 == 0 and j % 2 == 0 and rd.random() < prob:
-                wall_grid[i][j] = 1
-                if rd.randint(1,2) == 1:
-                    wall_grid[i-1][j] = 1
+                if rd.randint(1, 2) == 1:
+                    wall_grid[i][j] = 1
+                    if i - 1 >= 0:
+                        wall_grid[i - 1][j] = 1
                 else:
-                    wall_grid[i][j+1] = 1
+                    wall_grid[i][j] = 1
+                    if j + 1 < len(wall_grid[0]):
+                        wall_grid[i][j + 1] = 1
+            elif i % 4 == 0 and j % 2 == 0 and rd.random() < prob:  # Create longer and thinner walls
+                if j + 2 < len(wall_grid[0]):
+                    wall_grid[i][j] = 1
+                    wall_grid[i][j + 1] = 1
+                    wall_grid[i][j + 2] = 1
+                    if i + 1 < len(wall_grid):
+                        wall_grid[i + 1][j] = 0
+                        wall_grid[i + 1][j + 1] = 0
+                        wall_grid[i + 1][j + 2] = 0
     return wall_grid
 
 def createWalls(wall_grid, wall_size):

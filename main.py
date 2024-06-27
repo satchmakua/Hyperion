@@ -35,10 +35,10 @@ enemies = [src.Enemy(100 + i * 200, 100, 20) for i in range(5)]
 camera = ui.Camera(CAMERA_WIDTH, CAMERA_HEIGHT)
 
 map_size = (WIDTH, HEIGHT)
-wall_size = (32, 32)
-prob = 0.2
+wall_size = (20, 20)
+prob = 0.1
 wall_grid = src.createGrid((CAMERA_WIDTH, CAMERA_HEIGHT), (50, 50), player, enemies, prob)
-walls = src.createWalls(wall_grid, (50, 50))
+walls = src.createWalls(wall_grid, wall_size)
 minimap = pygame.Surface((map_size[0]//16, map_size[1]//16))
 ui.draw_wall_rects(wall_grid, wall_size, minimap, (250, 250, 250))
 # src.drawMinimap(minimap, (800, 600), (200, 150), player, enemy, walls)
@@ -90,13 +90,13 @@ while running:
     # Adjust mouse position with camera offset
     adj_mouse_pos = [mouse_pos[0] - camera.camera.x, mouse_pos[1] - camera.camera.y]
     player.aim(adj_mouse_pos, camera)
-    player.shoot(keys, projectiles, adj_mouse_pos, camera)
-    projectiles.update()
+    player.shoot(keys, projectiles, adj_mouse_pos, camera, walls)
+    projectiles.update(walls)
 
     for enemy in enemies:
-        enemy.follow_player(player, enemies, game_world_rect)
-        enemy.shoot(player, enemy_projectiles)
-        enemy_projectiles.update()
+        enemy.follow_player(player, enemies, game_world_rect, walls)
+        enemy.shoot(player, enemy_projectiles, walls)
+        enemy_projectiles.update(walls)
 
     viewport.center = player.rect.center
     viewport.clamp_ip(game_world_rect)
