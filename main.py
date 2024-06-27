@@ -4,21 +4,22 @@ import math
 import src
 import ui
 
-# todo: 
-# include game state 
-# levels
-# fix minimap
-# fix dash effect
-# scoretracker
-# enemy spawner
-# healther spawner
-# power-ups
-# boss-enemies
-# sound effects
-# doors
-# stealth
-# enemy percept
-# allies
+# TODO List
+
+# - Implement game state management
+# - Add multiple levels
+# - Fix minimap functionality
+# - Improve dash effect
+# - Implement score tracking
+# - Create enemy spawner
+# - Create health spawner
+# - Add power-ups
+# - Introduce boss enemies
+# - Add sound effects
+# - Implement doors
+# - Develop stealth mechanics
+# - Enhance enemy perception
+# - Add ally characters
 
 pygame.init()
 
